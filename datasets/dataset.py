@@ -47,6 +47,7 @@ class BasicDataset(Dataset):
         self.onehot = onehot
 
         self.transform = transform
+        self.simclr = kwargs.get('simclr', None)
         if self.is_ulb:
             if strong_transform is None:
                 self.strong_transform = copy.deepcopy(transform)
@@ -85,6 +86,8 @@ class BasicDataset(Dataset):
                     return idx, img_w, self.strong_transform(img)
                 elif self.alg == 'flexmatch':
                     return idx, img_w, self.strong_transform(img)
+                elif self.alg == 'flexmatch_exp':
+                    return idx, img_w, self.strong_transform(img), self.simclr(img)
                 elif self.alg == 'pimodel':
                     return idx, img_w, self.transform(img)
                 elif self.alg == 'pseudolabel':

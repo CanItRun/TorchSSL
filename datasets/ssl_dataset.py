@@ -188,6 +188,19 @@ def get_transform(mean, std, crop_size, train=True):
                                    transforms.Normalize(mean, std)])
 
 
+def simclr(mean, std, size=32, scale=(0.08, 1.0), resize=None):
+    return transforms.Compose([
+        transforms.RandomResizedCrop(size, scale=scale),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomApply([
+            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+        ], p=0.8),
+        transforms.RandomGrayscale(0.2),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std)
+    ])
+
+
 class SSL_Dataset:
     """
     SSL_Dataset class gets dataset from torchvision.datasets,
@@ -218,6 +231,7 @@ class SSL_Dataset:
         self.data_dir = data_dir
         crop_size = 96 if self.name.upper() == 'STL10' else 224 if self.name.upper() == 'IMAGENET' else 32
         self.transform = get_transform(mean[name], std[name], crop_size, train)
+        self.simclr_transform = simclr(mean[name], std[name], crop_size)
 
     def get_data(self, svhn_extra=True):
         """
@@ -330,7 +344,7 @@ class SSL_Dataset:
                                self.transform, False, None, onehot)
 
         ulb_dset = BasicDataset(self.alg, ulb_data, ulb_targets, self.num_classes,
-                                self.transform, True, strong_transform, onehot)
+                                self.transform, True, strong_transform, onehot, simclr=self.simclr_transform)
         # print(lb_data.shape)
         # print(ulb_data.shape)
         return lb_dset, ulb_dset
