@@ -31,8 +31,10 @@ class MyModel(nn.Module):
             nn.Linear(128, 128),
         )
 
-    def forward(self, input):
+    def forward(self, input, ood_test=False):
         logits, out = self.backbone(input, ood_test=True)
+        if not ood_test:
+            return logits
         return logits, self.head(out)
 
 
@@ -189,7 +191,7 @@ class FlexMatch:
 
             # inference and calculate sup/unsup losses
             with amp_cm():
-                logits, feat = self.model(inputs)
+                logits, feat = self.model.forward(inputs, ood_test=True)
 
                 logits_x_lb = logits[:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s, logits_x_ulb_s2 = logits[num_lb:].chunk(3)
@@ -317,7 +319,7 @@ class FlexMatch:
             x, y = x.cuda(args.gpu), y.cuda(args.gpu)
             num_batch = x.shape[0]
             total_num += num_batch
-            logits, _ = self.model(x)
+            logits = self.model(x)
             loss = F.cross_entropy(logits, y, reduction='mean')
             y_true.extend(y.cpu().tolist())
             y_pred.extend(torch.max(logits, dim=-1)[1].cpu().tolist())
