@@ -105,6 +105,12 @@ It is convenient to perform experiment with TorchSSL. For example, if you want t
 1. Modify the config file in `config/flexmatch/flexmatch.yaml` as you need
 2. Run `python flexmatch.py --c config/flexmatch/flexmatch.yaml`
 
+```shell
+
+python flexmatch_exp.py --c config/flexmatch_exp/flexmatch_cifar100
+
+```
+
 ### Customization
 
 If you want to write your own algorithm, please follow the following steps:
