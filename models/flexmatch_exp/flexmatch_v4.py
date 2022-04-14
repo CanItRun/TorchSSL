@@ -9,6 +9,7 @@ import pandas as pd
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+from accelerate.utils import send_to_device
 from torch.cuda.amp import autocast, GradScaler
 from collections import Counter
 import os
@@ -159,9 +160,14 @@ class FlexMatch:
 
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
 
-        for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, x_ulb_s2) in zip(self.loader_dict['train_lb'],
-                                                                            self.loader_dict['train_ulb']):
+        for batch_x, batch_un in zip(self.loader_dict['train_lb'],
+                                     self.loader_dict['train_ulb']):
+
+            send_to_device(batch_x, device=args.gpu)
+            send_to_device(batch_un, device=args.gpu)
+            (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, x_ulb_s2) = batch_x, batch_un
             # prevent the training iterations exceed args.num_train_iter
+
             if self.it > args.num_train_iter:
                 break
 
@@ -172,10 +178,6 @@ class FlexMatch:
             num_lb = x_lb.shape[0]
             num_ulb = x_ulb_w.shape[0]
             assert num_ulb == x_ulb_s.shape[0]
-
-            x_lb, x_ulb_w, x_ulb_s = x_lb.cuda(args.gpu), x_ulb_w.cuda(args.gpu), x_ulb_s.cuda(args.gpu)
-            x_ulb_idx = x_ulb_idx.cuda(args.gpu)
-            y_lb = y_lb.cuda(args.gpu)
 
             pseudo_counter = Counter(selected_label.tolist())
             if max(pseudo_counter.values()) < len(self.ulb_dset):  # not all(5w) -1
