@@ -152,9 +152,10 @@ class FlexMatch:
         selected_label = selected_label.cuda(args.gpu)
 
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
-
+        r = Record()
         for batch_x, batch_un in zip(self.loader_dict['train_lb'],
                                      self.loader_dict['train_ulb']):
+            m = Meter()
 
             send_to_device(batch_x, device=args.gpu)
             send_to_device(batch_un, device=args.gpu)

@@ -125,8 +125,8 @@ class FlexMatch:
 
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
 
-        for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s) in zip(self.loader_dict['train_lb'],
-                                                                  self.loader_dict['train_ulb']):
+        for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(self.loader_dict['train_lb'],
+                                                                     self.loader_dict['train_ulb']):
             # prevent the training iterations exceed args.num_train_iter
             if self.it > args.num_train_iter:
                 break
