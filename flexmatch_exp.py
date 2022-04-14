@@ -374,4 +374,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.save_name = args.save_name + str(args.exp)
     over_write_args_from_file(args, args.c)
+    args.data_dir = cache_dir()
     main(args)
