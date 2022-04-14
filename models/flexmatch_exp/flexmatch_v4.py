@@ -157,8 +157,8 @@ class FlexMatch:
                                      self.loader_dict['train_ulb']):
             m = Meter()
 
-            send_to_device(batch_x, device=args.gpu)
-            send_to_device(batch_un, device=args.gpu)
+            batch_x = send_to_device(batch_x, device=args.gpu)
+            batch_un = send_to_device(batch_un, device=args.gpu)
             (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, x_ulb_s2) = batch_x, batch_un
             # prevent the training iterations exceed args.num_train_iter
 
