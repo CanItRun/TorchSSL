@@ -317,7 +317,7 @@ class FlexMatch:
             x, y = x.cuda(args.gpu), y.cuda(args.gpu)
             num_batch = x.shape[0]
             total_num += num_batch
-            logits = self.model(x)
+            logits, _ = self.model(x)
             loss = F.cross_entropy(logits, y, reduction='mean')
             y_true.extend(y.cpu().tolist())
             y_pred.extend(torch.max(logits, dim=-1)[1].cpu().tolist())
