@@ -1,14 +1,7 @@
 """
 普通加自监督对比学习
 """
-import pickle
 import json
-import torch
-import numpy as np
-import pandas as pd
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.models as models
 from accelerate.utils import send_to_device
 from torch.cuda.amp import autocast, GradScaler
 from collections import Counter
@@ -16,11 +9,11 @@ import os
 import contextlib
 
 from lumo.contrib.nn.loss import contrastive_loss2
-from train_utils import AverageMeter
 
 from .flexmatch_utils import *
 from train_utils import ce_loss, wd_loss, EMA, Bn_Controller
 
+from lumo import Record, Meter
 from sklearn.metrics import *
 from copy import deepcopy
 
@@ -195,7 +188,7 @@ class FlexMatch:
 
             # inference and calculate sup/unsup losses
             with amp_cm():
-                logits, feat = self.model(inputs, ood_test=True)
+                logits, feat = self.model(inputs)
 
                 logits_x_lb = logits[:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s, logits_x_ulb_s2 = logits[num_lb:].chunk(3)
