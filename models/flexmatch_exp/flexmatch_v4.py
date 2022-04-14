@@ -1,3 +1,6 @@
+"""
+普通加自监督对比学习
+"""
 import pickle
 import json
 import torch
@@ -10,9 +13,11 @@ from torch.cuda.amp import autocast, GradScaler
 from collections import Counter
 import os
 import contextlib
+
+from lumo.contrib.nn.loss import contrastive_loss2
 from train_utils import AverageMeter
 
-from .flexmatch_utils import consistency_loss, Get_Scalar
+from .flexmatch_utils import *
 from train_utils import ce_loss, wd_loss, EMA, Bn_Controller
 
 from sklearn.metrics import *
@@ -35,6 +40,17 @@ class MyModel(nn.Module):
     def forward(self, input):
         logits, out = self.backbone(input, ood_test=True)
         return logits, self.head(out)
+
+
+from lumo import Trainer, ParamsType, MetricType
+
+
+class FlexMatchTrainer(Trainer):
+    def imodels(self, params: ParamsType):
+        pass
+
+    def train_step(self, batch, params: ParamsType = None) -> MetricType:
+        super().train_step(batch, params)
 
 
 class FlexMatch:
@@ -182,25 +198,48 @@ class FlexMatch:
                 logits_x_lb = logits[:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s, logits_x_ulb_s2 = logits[num_lb:].chunk(3)
 
+                # logits_x_lb = logits[:num_lb]
+                _, un_s0_feature, un_s1_feature = logits[num_lb:].chunk(3)
+
                 sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
 
                 # hyper-params for update
                 T = self.t_fn(self.it)
                 p_cutoff = self.p_fn(self.it)
 
-                unsup_loss, mask, select, pseudo_lb, p_model = consistency_loss(logits_x_ulb_s,
-                                                                                logits_x_ulb_w,
-                                                                                classwise_acc,
-                                                                                p_target,
-                                                                                p_model,
-                                                                                'ce', T, p_cutoff,
-                                                                                use_hard_labels=args.hard_label,
-                                                                                use_DA=args.use_DA)
+                unsup_loss, mask, select, un_w_pys, p_model = consistency_loss(logits_x_ulb_s,
+                                                                               logits_x_ulb_w,
+                                                                               classwise_acc,
+                                                                               p_target,
+                                                                               p_model,
+                                                                               'ce', T, p_cutoff,
+                                                                               use_hard_labels=args.hard_label,
+                                                                               use_DA=args.use_DA)
 
                 if x_ulb_idx[select == 1].nelement() != 0:
-                    selected_label[x_ulb_idx[select == 1]] = pseudo_lb[select == 1]
+                    selected_label[x_ulb_idx[select == 1]] = un_w_pys[select == 1]
 
-                total_loss = sup_loss + self.lambda_u * unsup_loss
+                qk_graph = (un_w_pys[:, None] == un_w_pys[None, :])  # type:torch.Tensor
+
+                balance_cls = classwise_acc.topk(80)
+                balance_cls = set(balance_cls.tolist())  # 类别比较平衡的样本
+                balance_mask = torch.tensor([i in balance_cls for i in un_w_pys.tolist()])
+
+                qk_graph[~balance_mask, :] = 0
+                qk_graph[:, ~balance_mask] = 0
+
+                # if params.qk_p:
+                #     qk_graph[~p_mask, :] = 0
+                #     qk_graph[:, ~p_mask] = 0
+
+                qk_graph = qk_graph | torch.eye(len(qk_graph), device=un_w_pys.device, dtype=torch.bool)
+                qk_graph = sharpen(qk_graph, 1)
+
+                Lcs = contrastive_loss2(un_s0_feature, un_s1_feature,
+                                        qk_graph=qk_graph,
+                                        norm=True, temperature=0.1)
+
+                total_loss = sup_loss + self.lambda_u * unsup_loss + Lcs
 
             # parameter updates
             if args.amp:

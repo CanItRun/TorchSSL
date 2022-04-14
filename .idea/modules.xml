@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/TorchSSL.iml" filepath="$PROJECT_DIR$/.idea/TorchSSL.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../lumo/.idea/lumo.iml" filepath="$PROJECT_DIR$/../lumo/.idea/lumo.iml" />
     </modules>
   </component>
 </project>
