@@ -217,7 +217,7 @@ class FlexMatch:
 
                 qk_graph = (un_w_pys[:, None] == un_w_pys[None, :])  # type:torch.Tensor
 
-                balance_cls = classwise_acc.topk(80)
+                _, balance_cls = classwise_acc.topk(80)
                 balance_cls = set(balance_cls.tolist())  # 类别比较平衡的样本
                 balance_mask = torch.tensor([i in balance_cls for i in un_w_pys.tolist()])
 
