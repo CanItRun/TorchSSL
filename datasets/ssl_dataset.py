@@ -21,6 +21,8 @@ import gc
 import sys
 import copy
 from PIL import Image
+from lumo import DatasetBuilder
+from .data import imagenet
 
 mean, std = {}, {}
 mean['cifar10'] = [x / 255 for x in [125.3, 123.0, 113.9]]
@@ -62,13 +64,13 @@ def default_loader(path):
 
 class ImagenetDataset(torchvision.datasets.ImageFolder):
     def __init__(self, root, transform, ulb, num_labels=-1):
-        super().__init__(root, transform)
+        # super().__init__(root, transform)
         self.ulb = ulb
         self.num_labels = num_labels
         is_valid_file = None
         extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
-        classes, class_to_idx = self._find_classes(self.root)
-        samples = self.make_dataset(self.root, class_to_idx, extensions, is_valid_file)
+        classes, class_to_idx = self.find_classes(self.root)
+        samples = self.make_dataset2(self.root, num_labels, class_to_idx, extensions, is_valid_file)
         if len(samples) == 0:
             msg = "Found 0 files in subfolders of: {}\n".format(self.root)
             if extensions is not None:
@@ -97,9 +99,10 @@ class ImagenetDataset(torchvision.datasets.ImageFolder):
         return (index, sample_transformed, target) if not self.ulb else (
             index, sample_transformed, self.strong_transform(sample))
 
-    def make_dataset(
+    def make_dataset2(
             self,
             directory,
+            num_labels,
             class_to_idx,
             extensions=None,
             is_valid_file=None,
@@ -123,16 +126,16 @@ class ImagenetDataset(torchvision.datasets.ImageFolder):
                 continue
             for root, _, fnames in sorted(os.walk(target_dir, followlinks=True)):
                 random.shuffle(fnames)
-                if self.num_labels != -1:
-                    fnames = fnames[:self.num_labels]
-                if self.num_labels != -1:
+                if num_labels != -1:
+                    fnames = fnames[:num_labels]
+                if num_labels != -1:
                     lb_idx[target_class] = fnames
                 for fname in fnames:
                     path = os.path.join(root, fname)
                     if is_valid_file(path):
                         item = path, class_index
                         instances.append(item)
-        if self.num_labels != -1:
+        if num_labels != -1:
             with open('./sampled_label_idx.json', 'w') as f:
                 json.dump(lb_idx, f)
         del lb_idx
@@ -144,6 +147,8 @@ class ImageNetLoader:
     def __init__(self, root_path, num_labels=-1, num_class=1000):
         self.root_path = os.path.join(root_path, 'imagenet')
         self.num_labels = num_labels // num_class
+
+        self.xs, self.ys = imagenet('train')
 
     def get_transform(self, train, ulb):
         if train:
@@ -160,10 +165,33 @@ class ImageNetLoader:
                 transforms.Normalize(mean["imagenet"], std["imagenet"])])
         return transform
 
+    def get_strong_transform(self, ):
+        transform = transforms.Compose([
+            RandAugment(3, 5),
+            transforms.Resize([256, 256]),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(224, padding=4, padding_mode='reflect'),
+            transforms.ToTensor(),
+            transforms.Normalize(mean["imagenet"], std["imagenet"])])
+        return transform
+
     def get_lb_train_data(self):
         transform = self.get_transform(train=True, ulb=False)
+        #
+        # labeled_dataset = (
+        #     DatasetBuilder()
+        #         .add_idx('id')
+        #         .add_input('xs', self.xs)
+        #         .add_input('ys', self.ys)
+        #         .add_output('xs', 'xs', transform)
+        #         .add_output('ys', 'ys')
+        # )
+        # return labeled_dataset
+
         data = ImagenetDataset(root=os.path.join(self.root_path, "train"), transform=transform, ulb=False,
                                num_labels=self.num_labels)
+        self.class_to_idx = data.class_to_idx
+        print(self.class_to_idx)
         return data
 
     def get_ulb_train_data(self):
@@ -172,9 +200,19 @@ class ImageNetLoader:
         return data
 
     def get_lb_test_data(self):
+        exs, eys, name_cls_map = imagenet('val')
         transform = self.get_transform(train=False, ulb=False)
-        data = ImagenetDataset(root=os.path.join(self.root_path, "val"), transform=transform, ulb=False)
-        return data
+
+        eval_dataset = (
+            DatasetBuilder()
+                .add_idx('id')
+                .add_input('xs', exs)
+                .add_input('ys', eys)
+                .add_output('xs', 'xs', transform)
+                .add_output('ys', 'ys')
+        )
+        # data = ImagenetDataset(root=os.path.join(self.root_path, "val"), transform=transform, ulb=False)
+        return eval_dataset
 
 
 def get_transform(mean, std, crop_size, train=True):

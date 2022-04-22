@@ -31,10 +31,10 @@ data_dir: ./data
 dataset: imagenet
 train_sampler: RandomSampler
 num_classes: 1000
-num_workers: 1
+num_workers: 4
 alg: flexmatch
 seed: 0
-world_size: 1
+world_size: 2
 rank: 0
 multiprocessing_distributed: True
 dist_url: tcp://127.0.0.1:10005
