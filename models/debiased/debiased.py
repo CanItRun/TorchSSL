@@ -17,7 +17,8 @@ from train_utils import ce_loss, wd_loss, EMA, Bn_Controller
 
 from sklearn.metrics import *
 from copy import deepcopy
-
+from lumo import Logger
+logger = Logger()
 def initial_qhat(class_num=1000):
     # initialize qhat of predictions (probability)
     qhat = (torch.ones([1, class_num], dtype=torch.float)/class_num).cuda()
@@ -136,7 +137,7 @@ class Debiased:
         tau = 0.4
         lambda_u = 10
         lambda_cld = 0.3
-        threshold = 0.95
+        threshold = args.p_cutoff
         qhat_m = 0.999
         ulb_iter = iter(self.loader_dict['train_ulb'])
         for (_, images_x, targets_x) in (self.loader_dict['train_lb']):
@@ -307,7 +308,10 @@ class Debiased:
                 if not args.multiprocessing_distributed or \
                         (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
                     self.save_model('latest_model.pth', save_path)
-
+                    
+            logger.inline(
+                    f"{self.it} iteration, USE_EMA: {self.ema_m != 0}, {tb_dict}, BEST_EVAL_ACC: {best_eval_acc}, at {best_it} iters")
+            
             if self.it % self.num_eval_iter == 0:
                 eval_dict = self.evaluate(args=args)
                 tb_dict.update(eval_dict)
