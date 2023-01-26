@@ -323,8 +323,8 @@ class Debiased:
 
                     if self.it == best_it:
                         self.save_model('model_best.pth', save_path)
-                    if not self.tb_log is None:
-                        self.tb_log.update(tb_dict, self.it)
+                    # if not self.tb_log is None:
+                    #     self.tb_log.update(tb_dict, self.it)
 
             self.it += 1
             del tb_dict
