@@ -136,7 +136,8 @@ class Debiased:
         tau = 0.4
         lambda_u = 10
         lambda_cld = 0.3
-        
+        threshold = 0.95
+        qhat_m = 0.999
         ulb_iter = iter(self.loader_dict['train_ulb'])
         for (_, images_x, targets_x) in (self.loader_dict['train_lb']):
             try:
@@ -211,11 +212,12 @@ class Debiased:
             #     mask2 = max_probs2.ge(args.threshold).float()
 
             max_probs, pseudo_targets_u = torch.max(pseudo_label, dim=-1)
-            mask = max_probs.ge(args.threshold).float()
+            mask = max_probs.ge(threshold).float()
 
             # update qhat
-            qhat_mask = mask if args.masked_qhat else None
-            qhat = update_qhat(torch.softmax(logits_u_w.detach(), dim=-1), qhat, momentum=args.qhat_m, qhat_mask=qhat_mask)
+            # qhat_mask = mask if args.masked_qhat else None
+            qhat_mask = None
+            qhat = update_qhat(torch.softmax(logits_u_w.detach(), dim=-1), qhat, momentum=qhat_m, qhat_mask=qhat_mask)
 
             # adaptive marginal loss
             delta_logits = torch.log(qhat)
@@ -257,7 +259,7 @@ class Debiased:
             #     loss_u = (torch.stack(loss_u_clip, dim=0).mean() + loss_u) / 2.0
 
             # CLD loss for unlabled samples (optional)
-            if args.CLDLoss:
+            if True:
                 prob_s = torch.softmax(logits_u_s, dim=-1)
                 prob_w = torch.softmax(logits_u_w.detach(), dim=-1)
                 loss_cld = CLDLoss(prob_s, prob_w, mask=None, weights=per_cls_weights)
