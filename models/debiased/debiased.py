@@ -18,6 +18,11 @@ from train_utils import ce_loss, wd_loss, EMA, Bn_Controller
 from sklearn.metrics import *
 from copy import deepcopy
 
+def initial_qhat(class_num=1000):
+    # initialize qhat of predictions (probability)
+    qhat = (torch.ones([1, class_num], dtype=torch.float)/class_num).cuda()
+    print("qhat size: ".format(qhat.size()))
+    return qhat
 
 class Debiased:
     def __init__(self, net_builder, num_classes, ema_m, T, p_cutoff, lambda_u, \
@@ -126,7 +131,9 @@ class Debiased:
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
 
         print('dataloader length',len(self.loader_dict['train_ulb']),len(self.loader_dict['train_lb']))
-
+        
+        qhat = initial_qhat(class_num=args.num_classes)
+        
         ulb_iter = iter(self.loader_dict['train_ulb'])
         for (_, images_x, targets_x) in (self.loader_dict['train_lb']):
             try:
