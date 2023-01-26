@@ -104,6 +104,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # trainer.initialize()
     logger = Logger()
     logger.add_log_dir(save_path)
+    logger.warning = logger.warn
     # SET save_path and logger
     logger_level = "WARNING"
     tb_log = None
