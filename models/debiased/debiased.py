@@ -38,7 +38,7 @@ class Debiased:
             logger: logger (see utils.py)
         """
 
-        super(FlexMatch, self).__init__()
+        super(Debiased, self).__init__()
 
         # momentum update param
         self.loader = {}
