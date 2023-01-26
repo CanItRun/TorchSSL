@@ -14,7 +14,7 @@ import torch.multiprocessing as mp
 
 from utils import net_builder, get_logger, count_parameters, over_write_args_from_file
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
-from models.debiased.debiased import Debised
+from models.debiased.debiased import Debiased
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
 from lumo import Logger
@@ -131,7 +131,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                     'is_remix': False},
                                    )
 
-    model = Debised(_net_builder,
+    model = Debiased(_net_builder,
                      args.num_classes,
                      args.ema_m,
                      args.T,
