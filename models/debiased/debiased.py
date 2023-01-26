@@ -133,6 +133,9 @@ class Debiased:
         print('dataloader length',len(self.loader_dict['train_ulb']),len(self.loader_dict['train_lb']))
         
         qhat = initial_qhat(class_num=args.num_classes)
+        tau = 0.4
+        lambda_u = 10
+        lambda_cld = 0.3
         
         ulb_iter = iter(self.loader_dict['train_ulb'])
         for (_, images_x, targets_x) in (self.loader_dict['train_lb']):
@@ -198,7 +201,7 @@ class Debiased:
             #     logits_u_s = (logits_u_s1 + logits_u_s2) / 2
             
             # producing debiased pseudo-labels
-            pseudo_label = causal_inference(logits_u_w.detach(), qhat, exp_idx=0, tau=args.tau)
+            pseudo_label = causal_inference(logits_u_w.detach(), qhat, exp_idx=0, tau=tau)
             # if args.multiviews:
             #     pseudo_label1 = causal_inference(logits_u_w1.detach(), qhat, exp_idx=0, tau=args.tau)
             #     max_probs1, pseudo_targets_u1 = torch.max(pseudo_label1, dim=-1)
@@ -220,7 +223,7 @@ class Debiased:
             #     logits_u_s1 = logits_u_s1 + args.tau*delta_logits
             #     logits_u_s2 = logits_u_s2 + args.tau*delta_logits
             # else:
-            logits_u_s = logits_u_s + args.tau*delta_logits
+            logits_u_s = logits_u_s + tau*delta_logits
 
             # loss for labeled samples
             loss_x = F.cross_entropy(logits_x, targets_x, reduction='mean')
@@ -262,21 +265,21 @@ class Debiased:
                 loss_cld = 0
 
             # total loss
-            total_loss = loss_x + args.lambda_u * loss_u + args.lambda_cld * loss_cld
+            total_loss = loss_x + lambda_u * loss_u + lambda_cld * loss_cld
 
             # total_loss = sup_loss + self.lambda_u * unsup_loss
 
             # parameter updates
             if args.amp:
                 scaler.scale(total_loss).backward()
-                if (args.clip > 0):
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
+                # if (args.clip > 0):
+                #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
                 scaler.step(self.optimizer)
                 scaler.update()
             else:
                 total_loss.backward()
-                if (args.clip > 0):
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
+                # if (args.clip > 0):
+                #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
                 self.optimizer.step()
 
             self.scheduler.step()
