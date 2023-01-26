@@ -113,6 +113,8 @@ class BasicDataset(Dataset):
                     return idx, img_w, img_s1, img_s2, img_s1_rot, rotate_v_list.index(rotate_v1)
                 elif self.alg == 'fullysupervised':
                     return idx
+                else:
+                    raise NotImplementedError(self.alg)
 
     def __len__(self):
         return len(self.data)
