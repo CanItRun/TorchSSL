@@ -160,7 +160,7 @@ class Debiased:
                 images_u_s = images_u_s.cuda(args.gpu, non_blocking=True)
 
             targets_x = targets_x.cuda(args.gpu, non_blocking=True)
-            targets_u = targets_u.cuda(args.gpu, non_blocking=True)
+            # targets_u = targets_u.cuda(args.gpu, non_blocking=True)
 
             # warmup learning rate
             # if epoch < args.warmup_epoch:
