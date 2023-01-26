@@ -17,7 +17,7 @@ from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
 from models.flexmatch.flexmatch import FlexMatch
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
-
+from lumo import Logger
 
 def main(args):
     '''
@@ -100,7 +100,8 @@ def main_worker(gpu, ngpus_per_node, args):
         tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
         logger_level = "INFO"
 
-    logger = get_logger(args.save_name, save_path, logger_level)
+    logger = Logger()
+    logger.add_log_dir(save_path)
     logger.warning(f"USE GPU: {args.gpu} for training")
 
     # SET flexmatch: class flexmatch in models.flexmatch

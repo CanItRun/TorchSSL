@@ -14,10 +14,11 @@ import torch.multiprocessing as mp
 
 from utils import net_builder, get_logger, count_parameters, over_write_args_from_file
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
+from models.debiased.debiased import Debised
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
+from lumo import Logger
 from lumo import Trainer, Params
-
 
 def main(args):
     '''
@@ -26,7 +27,7 @@ def main(args):
     '''
 
     save_path = os.path.join(args.save_dir, args.save_name)
-    if os.path.exists(save_path) and args.overwrite and args.resume == False:
+    if os.path.exists(save_path) and args.overwrite and  args.resume == False:
         import shutil
         shutil.rmtree(save_path)
     if os.path.exists(save_path) and not args.overwrite:
@@ -55,11 +56,13 @@ def main(args):
     # distributed: true if manually selected or if world_size > 1
     args.distributed = args.world_size > 1 or args.multiprocessing_distributed
     ngpus_per_node = torch.cuda.device_count()  # number of gpus of each node
-
+    
+    
     if args.multiprocessing_distributed:
         # now, args.world_size means num of total processes in all nodes
         args.world_size = ngpus_per_node * args.world_size
 
+        print(args)
         # args=(,) means the arguments of main_worker
         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
     else:
@@ -82,6 +85,7 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.deterministic = True
 
     # SET UP FOR DISTRIBUTED TRAINING
+    print('start',args.rank * ngpus_per_node + gpu)
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -91,26 +95,22 @@ def main_worker(gpu, ngpus_per_node, args):
         # set distributed group:
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
-
-    # SET save_path and logger
+    save_path = os.path.join(args.save_dir, args.save_name)
+    
     params = Params()
     params.from_args()
     trainer = Trainer(params)
     trainer.__exp_name__ = f'TorchSSL-{os.path.splitext(os.path.basename(__file__))[0]}'
     trainer.initialize()
-    
-
-    logger = trainer.logger
-    logger.info(f"USE GPU: {args.gpu} for training")
-    
-    save_path = trainer.exp.blob_dir()
-    # save_path = os.path.join(args.save_dir, args.save_name)
+    # SET save_path and logger
     logger_level = "WARNING"
     tb_log = None
     if args.rank % ngpus_per_node == 0:
         tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
         logger_level = "INFO"
-
+    
+    # logger = get_logger(args.save_name, save_path, logger_level)
+    logger.warning(f"USE GPU: {args.gpu} for training")
 
     # SET flexmatch: class flexmatch in models.flexmatch
     args.bn_momentum = 1.0 - 0.999
@@ -129,31 +129,21 @@ def main_worker(gpu, ngpus_per_node, args):
                                     'is_remix': False},
                                    )
 
-    exp_name = args.exp
-    import importlib
-
-    from models import flexmatch_exp
-    from pkgutil import iter_modules
-
-    methods = {i.name for i in list(iter_modules(flexmatch_exp.__path__))}
-
-    if exp_name is None:
-        print(methods)
-        return
-    module = importlib.import_module(f'models.flexmatch_exp.{exp_name}')
-    FlexMatch = module.FlexMatch
-
-    model = FlexMatch(_net_builder,
-                      args.num_classes,
-                      args.ema_m,
-                      args.T,
-                      args.p_cutoff,
-                      args.ulb_loss_ratio,
-                      args.hard_label,
-                      num_eval_iter=args.num_eval_iter,
-                      tb_log=tb_log,
-                      logger=logger)
-
+    model = Debised(_net_builder,
+                     args.num_classes,
+                     args.ema_m,
+                     args.T,
+                     args.p_cutoff,
+                     args.ulb_loss_ratio,
+                     args.hard_label,
+                     num_eval_iter=args.num_eval_iter,
+                     tb_log=tb_log,
+                     logger=logger)
+    
+    # pretrain = torch.load('model_799.pth',map_location='cpu')
+    # state = {k.replace('encoder_q.net.',''):v for k,v in pretrain['state_dict'].items() if k.startswith('encoder_q') and 'fc' not in k}
+    # print(model.model.load_state_dict(state,strict=False))
+    
     logger.info(f'Number of Trainable Params: {count_parameters(model.model)}')
 
     # SET Optimizer & LR Scheduler
@@ -206,14 +196,15 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
     if args.rank != 0 and args.distributed:
         torch.distributed.barrier()
-
+ 
     # Construct Dataset & DataLoader
     if args.dataset.lower() != "imagenet":
-        train_dset = SSL_Dataset(args, alg='flexmatch_exp', name=args.dataset, train=True,
-                                 num_classes=args.num_classes, data_dir=args.data_dir)
+        train_dset = SSL_Dataset(args, alg='debised', name=args.dataset, train=True,
+                                num_classes=args.num_classes, data_dir=args.data_dir)
         lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
-        _eval_dset = SSL_Dataset(args, alg='flexmatch_exp', name=args.dataset, train=False,
-                                 num_classes=args.num_classes, data_dir=args.data_dir)
+        
+        _eval_dset = SSL_Dataset(args, alg='debised', name=args.dataset, train=False,
+                                num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
     else:
         image_loader = ImageNetLoader(root_path=args.data_dir, num_labels=args.num_labels,
@@ -221,12 +212,16 @@ def main_worker(gpu, ngpus_per_node, args):
         lb_dset = image_loader.get_lb_train_data()
         ulb_dset = image_loader.get_ulb_train_data()
         eval_dset = image_loader.get_lb_test_data()
+        
+        logger.info('dataset length',len(lb_dset),len(ulb_dset),len(eval_dset))
+
     if args.rank == 0 and args.distributed:
         torch.distributed.barrier()
-
+ 
+    
     loader_dict = {}
     dset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset}
-
+    logger.info(f"get dataloader")
     loader_dict['train_lb'] = get_data_loader(dset_dict['train_lb'],
                                               args.batch_size,
                                               data_sampler=args.train_sampler,
@@ -238,14 +233,14 @@ def main_worker(gpu, ngpus_per_node, args):
                                                args.batch_size * args.uratio,
                                                data_sampler=args.train_sampler,
                                                num_iters=args.num_train_iter,
-                                               num_workers=4 * args.num_workers,
+                                               num_workers=args.num_workers,
                                                distributed=args.distributed)
 
     loader_dict['eval'] = get_data_loader(dset_dict['eval'],
                                           args.eval_batch_size,
                                           num_workers=args.num_workers,
                                           drop_last=False)
-
+    logger.info('evel loader',len(loader_dict['eval']))
     ## set DataLoader and ulb_dset on FlexMatch
     model.set_data_loader(loader_dict)
 
@@ -253,12 +248,14 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # If args.resume, load checkpoints from args.load_path
     if args.resume:
+        logger.info(f"resume")
         model.load_model(args.load_path)
 
     # START TRAINING of flexmatch
-    train_func = model.train
+    trainer = model.train
     for epoch in range(args.epoch):
-        train_func(args, logger=logger)
+        logger.info(f"train {epoch}")
+        trainer(args, logger=logger)
 
     if not args.multiprocessing_distributed or \
             (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
@@ -287,13 +284,11 @@ if __name__ == "__main__":
     Saving & loading of the model.
     '''
     parser.add_argument('--save_dir', type=str, default='./saved_models')
-    parser.add_argument('-sn', '--save_name', type=str, default='flexmatch_exp')
+    parser.add_argument('-sn', '--save_name', type=str, default='flexmatch')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--load_path', type=str, default=None)
-    parser.add_argument('--exp', type=str, default=None)
     parser.add_argument('-o', '--overwrite', action='store_true')
-    parser.add_argument('--use_tensorboard', action='store_true',
-                        help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
+    parser.add_argument('--use_tensorboard', action='store_true', help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
 
     '''
     Training Configuration of flexmatch
@@ -341,9 +336,8 @@ if __name__ == "__main__":
     '''
     Data Configurations
     '''
-    from lumo.proc.path import cache_dir
 
-    parser.add_argument('--data_dir', type=str, default=cache_dir())
+    parser.add_argument('--data_dir', type=str, default='./data')
     parser.add_argument('-ds', '--dataset', type=str, default='cifar10')
     parser.add_argument('--train_sampler', type=str, default='RandomSampler')
     parser.add_argument('-nc', '--num_classes', type=int, default=10)
@@ -375,7 +369,5 @@ if __name__ == "__main__":
     parser.add_argument('--c', type=str, default='')
 
     args = parser.parse_args()
-    args.save_name = args.save_name + str(args.exp)
     over_write_args_from_file(args, args.c)
-    args.data_dir = cache_dir()
     main(args)

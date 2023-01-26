@@ -86,6 +86,10 @@ class BasicDataset(Dataset):
                     return idx, img_w, self.strong_transform(img)
                 elif self.alg == 'flexmatch':
                     return idx, img_w, self.strong_transform(img)
+                elif self.alg == 'debiased_multiview':
+                    return idx, img_w, self.transform(img),self.strong_transform(img),self.strong_transform(img)
+                elif self.alg == 'debiased':
+                    return idx, img_w, self.strong_transform(img)
                 elif self.alg == 'flexmatch_exp':
                     return idx, img_w, self.strong_transform(img), self.simclr(img)
                 elif self.alg == 'pimodel':
