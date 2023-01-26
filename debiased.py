@@ -14,11 +14,11 @@ import torch.multiprocessing as mp
 
 from utils import net_builder, get_logger, count_parameters, over_write_args_from_file
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
-from models.debiased.debiased import Debiased
+from models.debiased.debiased import Debised
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
 from lumo import Logger
-from lumo import Trainer, Params
+
 
 def main(args):
     '''
@@ -97,11 +97,13 @@ def main_worker(gpu, ngpus_per_node, args):
                                 world_size=args.world_size, rank=args.rank)
     save_path = os.path.join(args.save_dir, args.save_name)
     
-    params = Params()
-    params.from_args()
-    trainer = Trainer(params)
-    trainer.__exp_name__ = f'TorchSSL-{os.path.splitext(os.path.basename(__file__))[0]}'
-    trainer.initialize()
+    # params = Params()
+    # params.from_args()
+    # trainer = Trainer(params)
+    # trainer.__exp_name__ = f'TorchSSL-{os.path.splitext(os.path.basename(__file__))[0]}'
+    # trainer.initialize()
+    logger = Logger()
+    logger.add_log_dir(save_path)
     # SET save_path and logger
     logger_level = "WARNING"
     tb_log = None
