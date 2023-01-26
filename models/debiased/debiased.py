@@ -171,18 +171,18 @@ class Debiased:
 
             # model forward
             batch_size_x = images_x.shape[0]
-            if not args.eman:
-                inputs = torch.cat((images_x, images_u_w, images_u_s))
-                logits = self.main(inputs)
-                logits_x = logits[:batch_size_x]
-                logits_u_w, logits_u_s = logits[batch_size_x:].chunk(2)
-            else:
-                inputs = torch.cat((images_x, images_u_s))
-                logits = self.model(inputs)
-                logits_x = logits[:batch_size_x]
-                logits_u_s = logits[batch_size_x:]
-                with torch.no_grad():  # no gradient to ema model
-                    logits_u_w = self.ema_model(images_u_w)
+            # if not args.eman:
+            #     inputs = torch.cat((images_x, images_u_w, images_u_s))
+            #     logits = self.main(inputs)
+            #     logits_x = logits[:batch_size_x]
+            #     logits_u_w, logits_u_s = logits[batch_size_x:].chunk(2)
+            # else:
+            inputs = torch.cat((images_x, images_u_s))
+            logits = self.model(inputs)
+            logits_x = logits[:batch_size_x]
+            logits_u_s = logits[batch_size_x:]
+            with torch.no_grad():  # no gradient to ema model
+                logits_u_w = self.ema_model(images_u_w)
             
             # if args.multiviews:
             #     logits_u_w1, logits_u_w2 = logits_u_w.chunk(2)
