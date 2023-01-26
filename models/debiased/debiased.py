@@ -144,12 +144,12 @@ class Debiased:
             torch.cuda.synchronize()
             start_run.record()
 
-            if False or args.multiviews:
-                images_u_w, images_u_w2, images_u_s, images_u_s2 = images_u
-                images_u_w = torch.cat([images_u_w.cuda(args.gpu, non_blocking=True), images_u_w2.cuda(args.gpu, non_blocking=True)], dim=0)
-                images_u_s = torch.cat([images_u_s.cuda(args.gpu, non_blocking=True), images_u_s2.cuda(args.gpu, non_blocking=True)], dim=0)
-            else:
-                images_u_w, images_u_s = images_u
+            # if False or args.multiviews:
+            #     images_u_w, images_u_w2, images_u_s, images_u_s2 = images_u
+            #     images_u_w = torch.cat([images_u_w.cuda(args.gpu, non_blocking=True), images_u_w2.cuda(args.gpu, non_blocking=True)], dim=0)
+            #     images_u_s = torch.cat([images_u_s.cuda(args.gpu, non_blocking=True), images_u_s2.cuda(args.gpu, non_blocking=True)], dim=0)
+            # else:
+            images_u_w, images_u_s = images_u
 
             # measure data loading time
             # data_time.update(time.time() - end)
