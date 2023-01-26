@@ -439,5 +439,17 @@ def CLDLoss(prob_s, prob_w, mask=None, weights=None):
         loss = (F.cross_entropy(affnity_s2w.div(0.07), cl_w, reduction='none', weight=weights) * (1 - mask)).mean()
     return loss
 
+def get_centroids(prob):
+    N, D = prob.shape
+    K = D
+    cl = prob.argmin(dim=1).long().view(-1)  # -> class index
+    Ncl = cl.view(cl.size(0), 1).expand(-1, D)
+    unique_labels, labels_count = Ncl.unique(dim=0, return_counts=True)
+    labels_count_all = torch.ones([K]).long().cuda() # -> counts of each class
+    labels_count_all[unique_labels[:,0]] = labels_count
+    c = torch.zeros([K, D], dtype=prob.dtype).cuda().scatter_add_(0, Ncl, prob) # -> class centroids
+    c = c / labels_count_all.float().unsqueeze(1)
+    return cl, c
+
 if __name__ == "__main__":
     pass
