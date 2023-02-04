@@ -11,6 +11,7 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from lumo.proc.path import cache_dir
 
 from utils import net_builder, get_logger, count_parameters, over_write_args_from_file
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
@@ -29,7 +30,7 @@ def main(args):
     exp.start()
     args.save_dir = exp.exp_root
     args.save_name = exp.test_name
-
+    args.data_dir = cache_dir()
     save_path = os.path.join(args.save_dir, args.save_name)
     # if os.path.exists(save_path) and args.overwrite and args.resume == False:
     #     import shutil
