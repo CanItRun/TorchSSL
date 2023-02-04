@@ -18,7 +18,7 @@ from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
 from models.flexmatch.flexmatch import FlexMatch
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
-from lumo import Logger, Experiment
+from lumo import Logger, SimpleExperiment
 
 
 def main(args):
@@ -26,7 +26,7 @@ def main(args):
     For (Distributed)DataParallelism,
     main(args) spawn each process (main_worker) to each GPU.
     '''
-    exp = Experiment(f'torchssl_debiasedpl_{args.save_name}')
+    exp = SimpleExperiment(f'torchssl_debiasedpl_{args.save_name}')
     exp.start()
     args.save_dir = exp.exp_root
     args.save_name = exp.test_name
