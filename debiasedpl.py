@@ -114,7 +114,7 @@ def main_worker(gpu, ngpus_per_node, args):
         logger_level = "INFO"
 
     # logger = get_logger(args.save_name, save_path, logger_level)
-    logger.warning(f"USE GPU: {args.gpu} for training")
+    logger.warn(f"USE GPU: {args.gpu} for training")
 
     # SET flexmatch: class flexmatch in models.flexmatch
     args.bn_momentum = 1.0 - 0.999
