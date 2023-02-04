@@ -17,13 +17,14 @@ from train_utils import ce_loss, wd_loss, EMA, Bn_Controller
 
 from sklearn.metrics import *
 from copy import deepcopy
-from lumo import Logger
-logger = Logger()
+
+
 def initial_qhat(class_num=1000):
     # initialize qhat of predictions (probability)
-    qhat = (torch.ones([1, class_num], dtype=torch.float)/class_num).cuda()
+    qhat = (torch.ones([1, class_num], dtype=torch.float) / class_num).cuda()
     print("qhat size: ".format(qhat.size()))
     return qhat
+
 
 class Debiased:
     def __init__(self, net_builder, num_classes, ema_m, T, p_cutoff, lambda_u, \
@@ -32,7 +33,7 @@ class Debiased:
         class Flexmatch contains setter of data_loader, optimizer, and model update methods.
         Args:
             net_builder: backbone network class (see net_builder in utils.py)
-            num_classes: # of label classes 
+            num_classes: # of label classes
             ema_m: momentum of exponential moving average for eval_model
             T: Temperature scaling parameter for output sharpening (only when hard_label = False)
             p_cutoff: confidence cutoff parameters for loss masking
@@ -131,23 +132,23 @@ class Debiased:
 
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
 
-        print('dataloader length',len(self.loader_dict['train_ulb']),len(self.loader_dict['train_lb']))
-        
+        print('dataloader length', len(self.loader_dict['train_ulb']), len(self.loader_dict['train_lb']))
+
         qhat = initial_qhat(class_num=args.num_classes)
         tau = 0.4
         lambda_u = 10
         lambda_cld = 0.3
-        threshold = args.p_cutoff
+        threshold = 0.95
         qhat_m = 0.999
         ulb_iter = iter(self.loader_dict['train_ulb'])
         for (_, images_x, targets_x) in (self.loader_dict['train_lb']):
             try:
-                images_u  = next(ulb_iter)
+                images_u = next(ulb_iter)
             except StopIteration:
                 break
 
-        # for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s) in zip(self.loader_dict['train_lb'],
-        #                                                           self.loader_dict['train_ulb']):
+            # for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s) in zip(self.loader_dict['train_lb'],
+            #                                                           self.loader_dict['train_ulb']):
             # prevent the training iterations exceed args.num_train_iter
             if self.it > args.num_train_iter:
                 break
@@ -174,44 +175,16 @@ class Debiased:
             targets_x = targets_x.cuda(args.gpu, non_blocking=True)
             # targets_u = targets_u.cuda(args.gpu, non_blocking=True)
 
-            # warmup learning rate
-            # if epoch < args.warmup_epoch:
-            #     warmup_step = args.warmup_epoch * len(train_loader_u)
-            #     curr_step = epoch * len(train_loader_u) + i + 1
-            #     lr_schedule.warmup_learning_rate(optimizer, curr_step, warmup_step, args)
-            # curr_lr.update(optimizer.param_groups[0]['lr'])
-
             # model forward
             batch_size_x = images_x.shape[0]
-            # if not args.eman:
-            #     inputs = torch.cat((images_x, images_u_w, images_u_s))
-            #     logits = self.main(inputs)
-            #     logits_x = logits[:batch_size_x]
-            #     logits_u_w, logits_u_s = logits[batch_size_x:].chunk(2)
-            # else:
-            inputs = torch.cat((images_x, images_u_s))
+            # not use eman in small datasets
+            inputs = torch.cat((images_x, images_u_w, images_u_s))
             logits = self.model(inputs)
             logits_x = logits[:batch_size_x]
-            logits_u_s = logits[batch_size_x:]
-            with torch.no_grad():  # no gradient to ema model
-                logits_u_w = self.ema_model(images_u_w)
-            
-            # if args.multiviews:
-            #     logits_u_w1, logits_u_w2 = logits_u_w.chunk(2)
-            #     logits_u_s1, logits_u_s2 = logits_u_s.chunk(2)
-            #     logits_u_w = (logits_u_w1 + logits_u_w2) / 2
-            #     logits_u_s = (logits_u_s1 + logits_u_s2) / 2
-            
+            logits_u_w, logits_u_s = logits[batch_size_x:].chunk(2)
+
             # producing debiased pseudo-labels
             pseudo_label = causal_inference(logits_u_w.detach(), qhat, exp_idx=0, tau=tau)
-            # if args.multiviews:
-            #     pseudo_label1 = causal_inference(logits_u_w1.detach(), qhat, exp_idx=0, tau=args.tau)
-            #     max_probs1, pseudo_targets_u1 = torch.max(pseudo_label1, dim=-1)
-            #     mask1 = max_probs1.ge(args.threshold).float()
-            #     pseudo_label2 = causal_inference(logits_u_w2.detach(), qhat, exp_idx=0, tau=args.tau)
-            #     max_probs2, pseudo_targets_u2 = torch.max(pseudo_label2, dim=-1)
-            #     mask2 = max_probs2.ge(args.threshold).float()
-
             max_probs, pseudo_targets_u = torch.max(pseudo_label, dim=-1)
             mask = max_probs.ge(threshold).float()
 
@@ -222,67 +195,31 @@ class Debiased:
 
             # adaptive marginal loss
             delta_logits = torch.log(qhat)
-            # if args.multiviews:
-            #     logits_u_s1 = logits_u_s1 + args.tau*delta_logits
-            #     logits_u_s2 = logits_u_s2 + args.tau*delta_logits
-            # else:
-            logits_u_s = logits_u_s + tau*delta_logits
+            logits_u_s = logits_u_s + tau * delta_logits
 
             # loss for labeled samples
             loss_x = F.cross_entropy(logits_x, targets_x, reduction='mean')
 
             # loss for unlabeled samples
             per_cls_weights = None
-            # if args.multiviews:
-            #     loss_u = 0
-            #     pseudo_targets_list = [pseudo_targets_u, pseudo_targets_u1, pseudo_targets_u2]
-            #     masks_list = [mask, mask1, mask2]
-            #     logits_u_list = [logits_u_s1, logits_u_s2]
-            #     for idx, targets_u in enumerate(pseudo_targets_list):
-            #         for logits_u in logits_u_list:
-            #             loss_u += (F.cross_entropy(logits_u, targets_u, reduction='none', weight=per_cls_weights) * masks_list[idx]).mean()
-            #     loss_u = loss_u/(len(pseudo_targets_list)*len(logits_u_list))
-            # else:
-            loss_u = (F.cross_entropy(logits_u_s, pseudo_targets_u, reduction='none', weight=per_cls_weights) * mask).mean()
-            
-            # if args.use_clip:
-            #     # add clip's predictions
-            #     indexs_u = indexs_u.cuda(args.gpu, non_blocking=True)
-            #     targets_u_clip = clip_preds_list[indexs_u][:,0].view(-1)
-            #     targets_u_clip = targets_u_clip.cuda(args.gpu, non_blocking=True)
-            #     # add mask for clip with thresholding
-            #     probs_list = clip_probs_list[indexs_u].cuda(args.gpu, non_blocking=True)
-            #     max_probs, _ = torch.max(probs_list, dim=-1)
-            #     mask_clip = max_probs.ge(0.4).float()
-            #     # apply clip predictions to low-confidence predictions
-            #     mask_delta = (mask_clip - mask - mask1 - mask2).ge(0.01).float()
-            #     loss_u_clip = [F.cross_entropy(logits_u, targets_u_clip, reduction='none', weight=per_cls_weights) * mask_delta for logits_u in logits_u_list]
-            #     loss_u = (torch.stack(loss_u_clip, dim=0).mean() + loss_u) / 2.0
+            loss_u = (F.cross_entropy(logits_u_s, pseudo_targets_u, reduction='none',
+                                      weight=per_cls_weights) * mask).mean()
 
             # CLD loss for unlabled samples (optional)
-            if True:
-                prob_s = torch.softmax(logits_u_s, dim=-1)
-                prob_w = torch.softmax(logits_u_w.detach(), dim=-1)
-                loss_cld = CLDLoss(prob_s, prob_w, mask=None, weights=per_cls_weights)
-            else:
-                loss_cld = 0
+            prob_s = torch.softmax(logits_u_s, dim=-1)
+            prob_w = torch.softmax(logits_u_w.detach(), dim=-1)
+            loss_cld = CLDLoss(prob_s, prob_w, mask=None, weights=per_cls_weights)
 
             # total loss
             total_loss = loss_x + lambda_u * loss_u + lambda_cld * loss_cld
 
-            # total_loss = sup_loss + self.lambda_u * unsup_loss
-
             # parameter updates
             if args.amp:
                 scaler.scale(total_loss).backward()
-                # if (args.clip > 0):
-                #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
                 scaler.step(self.optimizer)
                 scaler.update()
             else:
                 total_loss.backward()
-                # if (args.clip > 0):
-                #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
                 self.optimizer.step()
 
             self.scheduler.step()
@@ -308,10 +245,10 @@ class Debiased:
                 if not args.multiprocessing_distributed or \
                         (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
                     self.save_model('latest_model.pth', save_path)
-                    
-            logger.inline(
-                    f"{self.it} iteration, USE_EMA: {self.ema_m != 0}, {tb_dict}, BEST_EVAL_ACC: {best_eval_acc}, at {best_it} iters")
-            
+            if self.it % 200 == 0:
+                self.print_fn(
+                    f"{self.it} iteration, BEST_EVAL_ACC: {best_eval_acc}, at {best_it} iters")
+
             if self.it % self.num_eval_iter == 0:
                 eval_dict = self.evaluate(args=args)
                 tb_dict.update(eval_dict)
@@ -327,8 +264,6 @@ class Debiased:
 
                     if self.it == best_it:
                         self.save_model('model_best.pth', save_path)
-                    # if not self.tb_log is None:
-                    #     self.tb_log.update(tb_dict, self.it)
 
             self.it += 1
             del tb_dict
@@ -422,18 +357,23 @@ class Debiased:
         for i in range(1, nu + 1):
             xy[0][i], xy[i][i] = xy[i][i], xy[0][i]
         return [torch.cat(v, dim=0) for v in xy]
+
+
 def causal_inference(current_logit, qhat, exp_idx, tau=0.5):
     # de-bias pseudo-labels
-    debiased_prob = F.softmax(current_logit - tau*torch.log(qhat), dim=1)
+    debiased_prob = F.softmax(current_logit - tau * torch.log(qhat), dim=1)
     return debiased_prob
+
 
 def update_qhat(probs, qhat, momentum, qhat_mask=None):
     if qhat_mask is not None:
-        mean_prob = probs.detach()*qhat_mask.detach().unsqueeze(dim=-1)
+        mean_prob = probs.detach() * qhat_mask.detach().unsqueeze(dim=-1)
     else:
         mean_prob = probs.detach().mean(dim=0)
     qhat = momentum * qhat + (1 - momentum) * mean_prob
     return qhat
+
+
 def CLDLoss(prob_s, prob_w, mask=None, weights=None):
     cl_w, c_w = get_centroids(prob_w)
     affnity_s2w = torch.mm(prob_s, c_w.t())
@@ -443,17 +383,19 @@ def CLDLoss(prob_s, prob_w, mask=None, weights=None):
         loss = (F.cross_entropy(affnity_s2w.div(0.07), cl_w, reduction='none', weight=weights) * (1 - mask)).mean()
     return loss
 
+
 def get_centroids(prob):
     N, D = prob.shape
     K = D
     cl = prob.argmin(dim=1).long().view(-1)  # -> class index
     Ncl = cl.view(cl.size(0), 1).expand(-1, D)
     unique_labels, labels_count = Ncl.unique(dim=0, return_counts=True)
-    labels_count_all = torch.ones([K]).long().cuda() # -> counts of each class
-    labels_count_all[unique_labels[:,0]] = labels_count
-    c = torch.zeros([K, D], dtype=prob.dtype).cuda().scatter_add_(0, Ncl, prob) # -> class centroids
+    labels_count_all = torch.ones([K]).long().cuda()  # -> counts of each class
+    labels_count_all[unique_labels[:, 0]] = labels_count
+    c = torch.zeros([K, D], dtype=prob.dtype).cuda().scatter_add_(0, Ncl, prob)  # -> class centroids
     c = c / labels_count_all.float().unsqueeze(1)
     return cl, c
+
 
 if __name__ == "__main__":
     pass

@@ -17,7 +17,8 @@ from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
 from models.flexmatch.flexmatch import FlexMatch
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
-from lumo import Logger
+from lumo import Logger, Experiment
+
 
 def main(args):
     '''
@@ -25,18 +26,18 @@ def main(args):
     main(args) spawn each process (main_worker) to each GPU.
     '''
 
-    save_path = os.path.join(args.save_dir, args.save_name)
-    if os.path.exists(save_path) and args.overwrite and  args.resume == False:
-        import shutil
-        shutil.rmtree(save_path)
-    if os.path.exists(save_path) and not args.overwrite:
-        raise Exception('already existing model: {}'.format(save_path))
-    if args.resume:
-        if args.load_path is None:
-            raise Exception('Resume of training requires --load_path in the args')
-        if os.path.abspath(save_path) == os.path.abspath(args.load_path) and not args.overwrite:
-            raise Exception('Saving & Loading pathes are same. \
-                            If you want over-write, give --overwrite in the argument.')
+    # save_path = os.path.join(args.save_dir, args.save_name)
+    # if os.path.exists(save_path) and args.overwrite and args.resume == False:
+    #     import shutil
+    #     shutil.rmtree(save_path)
+    # if os.path.exists(save_path) and not args.overwrite:
+    #     raise Exception('already existing model: {}'.format(save_path))
+    # if args.resume:
+    #     if args.load_path is None:
+    #         raise Exception('Resume of training requires --load_path in the args')
+    #     if os.path.abspath(save_path) == os.path.abspath(args.load_path) and not args.overwrite:
+    #         raise Exception('Saving & Loading pathes are same. \
+    #                         If you want over-write, give --overwrite in the argument.')
 
     if args.seed is not None:
         warnings.warn('You have chosen to seed training. '
@@ -93,16 +94,15 @@ def main_worker(gpu, ngpus_per_node, args):
                                 world_size=args.world_size, rank=args.rank)
 
     # SET save_path and logger
-    save_path = os.path.join(args.save_dir, args.save_name)
-    logger_level = "WARNING"
+    exp = Experiment('torchssl_flexmatch_{args.save_name}')
+    save_path = exp.test_name
     tb_log = None
     if args.rank % ngpus_per_node == 0:
         tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
-        logger_level = "INFO"
 
     logger = Logger()
     logger.add_log_dir(save_path)
-    logger.warning(f"USE GPU: {args.gpu} for training")
+    logger.warn(f"USE GPU: {args.gpu} for training")
 
     # SET flexmatch: class flexmatch in models.flexmatch
     args.bn_momentum = 1.0 - 0.999
@@ -122,15 +122,17 @@ def main_worker(gpu, ngpus_per_node, args):
                                    )
 
     model = FlexMatch(_net_builder,
-                     args.num_classes,
-                     args.ema_m,
-                     args.T,
-                     args.p_cutoff,
-                     args.ulb_loss_ratio,
-                     args.hard_label,
-                     num_eval_iter=args.num_eval_iter,
-                     tb_log=tb_log,
-                     logger=logger)
+                      args.num_classes,
+                      args.ema_m,
+                      args.T,
+                      args.p_cutoff,
+                      args.ulb_loss_ratio,
+                      args.hard_label,
+                      num_eval_iter=args.num_eval_iter,
+                      tb_log=tb_log,
+                      logger=logger)
+    if args.pretrain:
+        pass
 
     logger.info(f'Number of Trainable Params: {count_parameters(model.model)}')
 
@@ -184,14 +186,14 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
     if args.rank != 0 and args.distributed:
         torch.distributed.barrier()
- 
+
     # Construct Dataset & DataLoader
     if args.dataset.lower() != "imagenet":
         train_dset = SSL_Dataset(args, alg='flexmatch', name=args.dataset, train=True,
-                                num_classes=args.num_classes, data_dir=args.data_dir)
+                                 num_classes=args.num_classes, data_dir=args.data_dir)
         lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
         _eval_dset = SSL_Dataset(args, alg='flexmatch', name=args.dataset, train=False,
-                                num_classes=args.num_classes, data_dir=args.data_dir)
+                                 num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
     else:
         image_loader = ImageNetLoader(root_path=args.data_dir, num_labels=args.num_labels,
@@ -201,8 +203,7 @@ def main_worker(gpu, ngpus_per_node, args):
         eval_dset = image_loader.get_lb_test_data()
     if args.rank == 0 and args.distributed:
         torch.distributed.barrier()
- 
-    
+
     loader_dict = {}
     dset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset}
 
@@ -270,8 +271,9 @@ if __name__ == "__main__":
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--load_path', type=str, default=None)
     parser.add_argument('-o', '--overwrite', action='store_true')
-    parser.add_argument('--use_tensorboard', action='store_true', help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
-
+    parser.add_argument('--use_tensorboard', action='store_true',
+                        help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
+    parser.add_argument('--pretrain', type=str, default=None)
     '''
     Training Configuration of flexmatch
     '''

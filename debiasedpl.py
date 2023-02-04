@@ -17,7 +17,7 @@ from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
 from models.debiased.debiased import Debiased
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
-from lumo import Logger
+from lumo import Logger, Experiment
 
 
 def main(args):
@@ -27,7 +27,7 @@ def main(args):
     '''
 
     save_path = os.path.join(args.save_dir, args.save_name)
-    if os.path.exists(save_path) and args.overwrite and  args.resume == False:
+    if os.path.exists(save_path) and args.overwrite and args.resume == False:
         import shutil
         shutil.rmtree(save_path)
     if os.path.exists(save_path) and not args.overwrite:
@@ -56,8 +56,7 @@ def main(args):
     # distributed: true if manually selected or if world_size > 1
     args.distributed = args.world_size > 1 or args.multiprocessing_distributed
     ngpus_per_node = torch.cuda.device_count()  # number of gpus of each node
-    
-    
+
     if args.multiprocessing_distributed:
         # now, args.world_size means num of total processes in all nodes
         args.world_size = ngpus_per_node * args.world_size
@@ -85,7 +84,7 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.deterministic = True
 
     # SET UP FOR DISTRIBUTED TRAINING
-    print('start',args.rank * ngpus_per_node + gpu)
+    print('start', args.rank * ngpus_per_node + gpu)
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -96,22 +95,24 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
     save_path = os.path.join(args.save_dir, args.save_name)
-    
-    # params = Params()
-    # params.from_args()
-    # trainer = Trainer(params)
-    # trainer.__exp_name__ = f'TorchSSL-{os.path.splitext(os.path.basename(__file__))[0]}'
-    # trainer.initialize()
-    logger = Logger()
-    logger.add_log_dir(save_path)
-    logger.warning = logger.warn
+
     # SET save_path and logger
     logger_level = "WARNING"
+    exp = Experiment('torchssl_debiasedpl_{args.save_name}')
+    save_path = exp.test_name
+    tb_log = None
+    if args.rank % ngpus_per_node == 0:
+        tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
+
+    logger = Logger()
+    logger.add_log_dir(save_path)
+    logger.warn(f"USE GPU: {args.gpu} for training")
+
     tb_log = None
     if args.rank % ngpus_per_node == 0:
         tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
         logger_level = "INFO"
-    
+
     # logger = get_logger(args.save_name, save_path, logger_level)
     logger.warning(f"USE GPU: {args.gpu} for training")
 
@@ -142,11 +143,10 @@ def main_worker(gpu, ngpus_per_node, args):
                      num_eval_iter=args.num_eval_iter,
                      tb_log=tb_log,
                      logger=logger)
-    
-    # pretrain = torch.load('model_799.pth',map_location='cpu')
-    # state = {k.replace('encoder_q.net.',''):v for k,v in pretrain['state_dict'].items() if k.startswith('encoder_q') and 'fc' not in k}
-    # print(model.model.load_state_dict(state,strict=False))
-    
+
+    if args.pretrain:
+        pass
+
     logger.info(f'Number of Trainable Params: {count_parameters(model.model)}')
 
     # SET Optimizer & LR Scheduler
@@ -199,15 +199,15 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
     if args.rank != 0 and args.distributed:
         torch.distributed.barrier()
- 
+
     # Construct Dataset & DataLoader
     if args.dataset.lower() != "imagenet":
         train_dset = SSL_Dataset(args, alg='debiased', name=args.dataset, train=True,
-                                num_classes=args.num_classes, data_dir=args.data_dir)
+                                 num_classes=args.num_classes, data_dir=args.data_dir)
         lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
-        
+
         _eval_dset = SSL_Dataset(args, alg='debiased', name=args.dataset, train=False,
-                                num_classes=args.num_classes, data_dir=args.data_dir)
+                                 num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
     else:
         image_loader = ImageNetLoader(root_path=args.data_dir, num_labels=args.num_labels,
@@ -215,13 +215,12 @@ def main_worker(gpu, ngpus_per_node, args):
         lb_dset = image_loader.get_lb_train_data()
         ulb_dset = image_loader.get_ulb_train_data()
         eval_dset = image_loader.get_lb_test_data()
-        
-        logger.info('dataset length',len(lb_dset),len(ulb_dset),len(eval_dset))
+
+        logger.info('dataset length', len(lb_dset), len(ulb_dset), len(eval_dset))
 
     if args.rank == 0 and args.distributed:
         torch.distributed.barrier()
- 
-    
+
     loader_dict = {}
     dset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset}
     logger.info(f"get dataloader")
@@ -243,7 +242,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                           args.eval_batch_size,
                                           num_workers=args.num_workers,
                                           drop_last=False)
-    logger.info('evel loader',len(loader_dict['eval']))
+    logger.info('evel loader', len(loader_dict['eval']))
     ## set DataLoader and ulb_dset on FlexMatch
     model.set_data_loader(loader_dict)
 
@@ -290,8 +289,10 @@ if __name__ == "__main__":
     parser.add_argument('-sn', '--save_name', type=str, default='flexmatch')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--load_path', type=str, default=None)
+    parser.add_argument('--pretrain', type=str, default=None)
     parser.add_argument('-o', '--overwrite', action='store_true')
-    parser.add_argument('--use_tensorboard', action='store_true', help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
+    parser.add_argument('--use_tensorboard', action='store_true',
+                        help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
 
     '''
     Training Configuration of flexmatch
