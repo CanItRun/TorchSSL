@@ -32,17 +32,17 @@ def main(args):
     args.data_dir = cache_dir()
 
     save_path = os.path.join(args.save_dir, args.save_name)
-    if os.path.exists(save_path) and args.overwrite and args.resume == False:
-        import shutil
-        shutil.rmtree(save_path)
-    if os.path.exists(save_path) and not args.overwrite:
-        raise Exception('already existing model: {}'.format(save_path))
-    if args.resume:
-        if args.load_path is None:
-            raise Exception('Resume of training requires --load_path in the args')
-        if os.path.abspath(save_path) == os.path.abspath(args.load_path) and not args.overwrite:
-            raise Exception('Saving & Loading pathes are same. \
-                            If you want over-write, give --overwrite in the argument.')
+    # if os.path.exists(save_path) and args.overwrite and args.resume == False:
+    #     import shutil
+    #     shutil.rmtree(save_path)
+    # if os.path.exists(save_path) and not args.overwrite:
+    #     raise Exception('already existing model: {}'.format(save_path))
+    # if args.resume:
+    #     if args.load_path is None:
+    #         raise Exception('Resume of training requires --load_path in the args')
+    #     if os.path.abspath(save_path) == os.path.abspath(args.load_path) and not args.overwrite:
+    #         raise Exception('Saving & Loading pathes are same. \
+    #                         If you want over-write, give --overwrite in the argument.')
 
     if args.seed is not None:
         warnings.warn('You have chosen to seed training. '
@@ -69,8 +69,10 @@ def main(args):
         print(args)
         # args=(,) means the arguments of main_worker
         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
+        exp.end()
     else:
         main_worker(args.gpu, ngpus_per_node, args)
+        exp.end()
 
 
 def main_worker(gpu, ngpus_per_node, args):

@@ -68,8 +68,10 @@ def main(args):
 
         # args=(,) means the arguments of main_worker
         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
+        exp.end()
     else:
         main_worker(args.gpu, ngpus_per_node, args)
+        exp.end()
 
 
 def main_worker(gpu, ngpus_per_node, args):
