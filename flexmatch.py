@@ -25,8 +25,12 @@ def main(args):
     For (Distributed)DataParallelism,
     main(args) spawn each process (main_worker) to each GPU.
     '''
+    exp = Experiment(f'torchssl_debiasedpl_{args.save_name}')
+    exp.start()
+    args.save_dir = exp.exp_root
+    args.save_name = exp.test_name
 
-    # save_path = os.path.join(args.save_dir, args.save_name)
+    save_path = os.path.join(args.save_dir, args.save_name)
     # if os.path.exists(save_path) and args.overwrite and args.resume == False:
     #     import shutil
     #     shutil.rmtree(save_path)
@@ -93,10 +97,11 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
 
+    save_path = os.path.join(args.save_dir, args.save_name)
     # SET save_path and logger
-    exp = Experiment('torchssl_flexmatch_{args.save_name}')
-    exp.start()
-    save_path = exp.test_name
+    # exp = Experiment('torchssl_flexmatch_{args.save_name}')
+    # exp.start()
+    # save_path = exp.test_name
     tb_log = None
     if args.rank % ngpus_per_node == 0:
         tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
