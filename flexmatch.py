@@ -95,6 +95,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # SET save_path and logger
     exp = Experiment('torchssl_flexmatch_{args.save_name}')
+    exp.start()
     save_path = exp.test_name
     tb_log = None
     if args.rank % ngpus_per_node == 0:
